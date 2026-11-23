@@ -1,0 +1,17 @@
+name: Validate Worker
+on:
+  push:
+    branches: [main, fix/worker-deployment-and-security]
+  pull_request:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Validate Wrangler bundle
+        run: npx --yes wrangler@4 deploy --dry-run --outdir dist-worker
