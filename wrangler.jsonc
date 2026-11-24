@@ -1,1 +1,9 @@
-{"name":"site-rebuilder-g2b","main":"worker/index.js","compatibility_date":"2026-11-23","workers_dev":true,"vars":{"ALLOWED_ORIGIN":"http://localhost:8000"},"secrets":{"required":["G2B_API_KEY"]}}
+{
+  "name": "site-rebuilder-g2b",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-23",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGIN": "http://localhost:8000"
+  }
+}
