@@ -3,7 +3,10 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-11-23",
   "workers_dev": true,
+  "assets": {
+    "directory": "./public"
+  },
   "vars": {
-    "ALLOWED_ORIGIN": "http://localhost:8000"
+    "ALLOWED_ORIGIN": "http://localhost:8000,http://127.0.0.1:8000,https://site-rebuilder-g2b.okrangone98.workers.dev,https://okrangone98-oss.github.io"
   }
 }

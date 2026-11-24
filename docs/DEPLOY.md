@@ -1,39 +1,73 @@
 # API 연동 및 배포
 
-## 1. 로컬 테스트
+## 1. 구조
+
+하나의 Cloudflare Worker(`site-rebuilder-g2b`)가 프론트엔드와 API를 함께 제공한다.
+
+| 경로 | 처리 |
+| --- | --- |
+| `/` 및 `public/` 정적 파일 | Workers 정적 자산(`assets.directory = ./public`) |
+| `/api/bids` | `worker/index.js` → 나라장터 공식 API 프록시 |
+| `/health` | `{ok, configured, version}` |
+
+배포 주소: https://site-rebuilder-g2b.okrangone98.workers.dev/
+
+## 2. 로컬 테스트
 
 ```bash
 npm test
-npx wrangler dev
+npm run dev                 # http://localhost:8000
+npx wrangler dev            # Worker까지 로컬 실행 (.dev.vars에 G2B_API_KEY)
 ```
 
-로컬 전용 `.dev.vars`에 `G2B_API_KEY=발급받은키`를 넣습니다. 이 파일은 Git에서 제외됩니다. 키를 채팅이나 GitHub에 붙여넣지 마세요.
+`.dev.vars`는 Git에서 제외된다. 키를 채팅이나 GitHub에 붙여넣지 않는다.
 
-## 2. Cloudflare Worker 배포
+## 3. 배포
 
-실제 배포는 별도 승인 후 진행합니다. Cloudflare 계정에서 Worker 생성/배포 권한이 필요합니다.
+Cloudflare Workers Builds가 `main` 브랜치에 연결되어 있어 **main에 push하면 자동 배포**된다.
+
+- Worker 코드·정적 자산·`wrangler.jsonc`(vars 포함)은 push된 커밋 기준으로 배포된다.
+- 배포 확인: `GET /health`의 `version` 값이 커밋의 `VERSION`과 같은지 확인한다.
+- Secret(`G2B_API_KEY`)은 빌드마다 유지되며 `wrangler.jsonc`에 넣지 않는다.
+
+수동 배포가 필요할 때(대시보드에서):
 
 ```bash
 npx wrangler deploy
-npx wrangler secret put G2B_API_KEY
+npx wrangler secret put G2B_API_KEY   # Secret은 최초 1회, 이미 등록되어 있음
 ```
 
-주의: `wrangler secret put` 명령은 Worker 버전을 생성해 즉시 배포할 수 있습니다. 운영 승인 전에 실행하지 마세요.
+Cloudflare 대시보드 → Workers & Pages → `site-rebuilder-g2b` → Deployments 에서 빌드 로그를 볼 수 있다.
 
-Cloudflare 대시보드 → Workers & Pages → Worker → Settings → Variables and Secrets에서 `G2B_API_KEY`를 **Secret**으로 등록할 수도 있습니다.
+## 4. CORS 제한
 
-## 3. CORS 제한
+`wrangler.jsonc`의 `ALLOWED_ORIGIN`(쉼표 구분, 와일드카드 없음):
 
-`wrangler.jsonc`의 `ALLOWED_ORIGIN`은 기본적으로 `http://localhost:8000`입니다. 운영 사이트를 공개할 때에는 실제 사이트 origin으로 교체해야 합니다. 쉼표로 여러 origin을 지정할 수 있습니다. 와일드카드는 사용하지 않습니다.
+```
+http://localhost:8000,
+http://127.0.0.1:8000,
+https://site-rebuilder-g2b.okrangone98.workers.dev,
+https://okrangone98-oss.github.io
+```
 
-## 4. 실제 조회
+- 같은 주소(workers.dev)에서 앱을 열면 Origin 이슈가 없다.
+- 커스텀 도메인을 붙이면 그 origin을 추가해야 한다.
+- GitHub Pages는 워크플로 파일을 추가해야 하는데 현재 GitHub 연결 앱에 `workflows` 권한이 없어 쓰지 않는다. 프론트엔드는 Worker 정적 자산으로만 배포한다.
 
-`GET /api/bids?category=용역&from=20261117&to=20261123`
+## 5. 실제 조회
 
-응답: `{bids: [...], count, queriedAt, hasMore}`. 현재 첫 100건만 조회하며 `hasMore`가 참이면 일부 결과가 누락됩니다. 공식 API의 응답 필드와 인증키 형식은 실데이터로 검증해야 합니다.
+```
+GET /api/bids?category=용역&from=20261117&to=20261123&q=양양&page=1
+```
 
-## 5. 주의
+응답: `{bids: [...], count, category, from, to, keyword, page, totalCount, hasMore, queriedAt, version}`
 
-- 공공데이터포털 **일반 인증키(Decoding)** 사용 권장. 인코딩된 키를 다시 URLSearchParams에 넣으면 이중 인코딩 문제가 생길 수 있습니다.
-- 공식 API의 정확한 엔드포인트/파라미터는 승인된 서비스 명세에서 최종 확인해야 합니다.
-- Worker는 현재 인증 없는 공개 조회 엔드포인트이므로, 운영 전 호출량 제한과 캐시를 추가해야 합니다.
+- 기간은 `from`·`to` 모두 `YYYYMMDD`, 최대 7일.
+- `q`가 있으면 공고명 검색 오퍼레이션(`*PPSSrch02`), 없으면 목록 오퍼레이션(`*02`)을 사용한다.
+- `numOfRows`는 100 고정, `hasMore`가 true면 `page`를 올려 이어 받는다.
+
+## 6. 주의
+
+- 공공데이터포털 **일반 인증키(Decoding)** 사용. Worker가 URLSearchParams로 인코딩한다.
+- Worker는 인증 없는 공개 조회 엔드포인트다. 공개 홍보 전 호출량 제한·캐시 추가를 검토한다.
+- 공식 API 응답 필드가 바뀌면 `api/g2b.js`의 `normalizeBid`만 손보면 된다.

@@ -1,26 +1,35 @@
-# 나라장터 공식 API 연동 설계
+# 나라장터 공식 API 연동
 
 공식 출처: https://www.data.go.kr/data/15129394/openapi.do
+서비스: `BidPublicInfoService02` (2026-11-10 이후 조회기간 최대 7일)
 
-2026-11-10 이후 조회기간은 최대 7일. 각 업무 구분별 오퍼레이션을 사용해야 합니다.
+## 현 단계 (연결 완료)
 
-## 현 단계
+- `api/g2b.js`: 기간(7일) 검증, 오퍼레이션 선택, 요청 URL 구성, 응답 정규화, 중복 제거, 마감일 계산
+- `worker/index.js`: `GET /api/bids` — CORS 검사, 입력 검증, 12초 타임아웃, 오류 코드 구분(400/403/502/503)
+- `public/`: 업무 구분·기간·키워드 입력, 100건 페이지 이어 받기, 결과 표시
+- 인증키는 Worker Secret `G2B_API_KEY`(Decoding 키)에만 있고 브라우저·Git 저장소에 없다
 
-- `api/g2b.js`: 기간 검증, 요청 URL 구성, 응답 정규화, 중복 제거, 마감일 계산
-- `api/g2b.test.mjs`: 단위 테스트
-- 실제 인증키 발급 및 서버 프록시, 실시간 공고 조회는 아직 연결하지 않음
-- 인증키를 브라우저 JS, 공개 URL, GitHub 커밋에 포함하지 말 것
+## 오퍼레이션 구분
 
-## 권장 다음 단계
+| 조건 | 오퍼레이션 | 설명 |
+| --- | --- | --- |
+| 키워드 없음 | `getBidPblancListInfo{Servc|Thng|Cnstwk|Frgcpt}02` | 공고게시일시 기준 목록 |
+| 키워드 있음 | `getBidPblancListInfo{Servc|Thng|Cnstwk|Frgcpt}PPSSrch02` | 검색조건 기준, `bidNtceNm` 지원 |
 
-1. 공공데이터포털에서 **조달청_나라장터 입찰공고정보서비스** 활용신청 후 인증키 발급.
-2. Cloudflare Worker에 인증키를 Secret으로 등록하고, Worker에서만 공식 API 호출.
-3. Worker에서 날짜 7일 제한, 입력 검증, 요청 빈도 제한 및 캐시를 적용.
-4. 프런트엔드는 Worker API만 호출하고, 공고 원문과 조회 시각을 표시.
-5. 공식 API 실데이터로 필드명·날짜·상태·페이지네이션 검증.
+`*02`(목록) 오퍼레이션은 `bidNtceNm`을 받지 않으므로, 공고명 검색은 반드시 `*PPSSrch02`로 보낸다.
+이름이 다른 `getBidPblancListInfoServcPPSSrch`(서비스 버전 접미사 없음)는 `BidPublicInfoService02`에 존재하지 않는다(NO_OPENAPI_SERVICE_ERROR).
 
-참고: 인증키가 URL 쿼리로 전달되는 API이므로 서버 로그에도 노출되지 않도록 마스킹 필요.
+## 요청 파라미터
 
-## REA
+`serviceKey`, `pageNo`, `numOfRows`(≤100), `type=json`, `inqryDiv=1`(공고게시일시), `inqryBgnDt=YYYYMMDD0000`, `inqryEndDt=YYYYMMDD2359`, (키워드 시) `bidNtceNm`
 
-대상: https://radar.rimikimi.com/ . 접근 가능한 공개 화면을 REA/Playwright로 분석하는 단계는 아직 미완료. 현재 화면은 독립 구현이며 원본 재현 검증은 하지 않았음.
+## 응답 정규화
+
+`normalizeBid`: `bidNtceNm`→title, `dminsttNm`/`ntceInsttNm`→agency, `bidNtceNo`+`bidNtceOrd`→number, `bidNtceDt`→postedAt, `bidClseDt`→deadline, `bidNtceDtlUrl`→url(https만), `asignBdgtAmt`/`presmptPrce`→amount
+
+## 알려진 한계
+
+- 응답은 100건 단위, 전체 건수는 `totalCount`로만 알 수 있다(앱은 `hasMore`로 다음 페이지 제공).
+- 날짜 컬럼에 2037년 같은 미래 값이 섞일 수 있어 최신성은 공고일 기준으로만 판단한다.
+- 개발계정 하루 1,000회 호출 한도. 프론트는 사용자가 버튼을 누를 때만 호출한다.
