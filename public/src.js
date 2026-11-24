@@ -69,8 +69,9 @@ function mergeRecords(base, incoming) {
 
 function money(value) {
   const s = String(value || '').replace(/[^\d]/g, '');
-  if (!s) return '';
-  return `${Number(s).toLocaleString('ko-KR')}원`;
+  const n = Number(s);
+  if (!s || !Number.isFinite(n) || n === 0) return '';
+  return `${n.toLocaleString('ko-KR')}원`;
 }
 
 /** 기기 시간대와 무관하게 한국 시간 기준 YYYY-MM-DD */
